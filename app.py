@@ -44,6 +44,7 @@ import sqlalchemy
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, func
+import datetime as dt
 
 from flask import Flask, jsonify
 
@@ -51,7 +52,7 @@ from flask import Flask, jsonify
 #################################################
 # Database Setup
 #################################################
-engine = create_engine("sqlite:///titanic.sqlite")
+engine = create_engine("sqlite:///Resources/hawaii.sqlite")
 
 # reflect an existing database into a new model
 Base = automap_base()
@@ -59,14 +60,15 @@ Base = automap_base()
 Base.prepare(engine, reflect=True)
 
 # Save reference to the table
-Passenger = Base.classes.passenger
+Station = Base.classes.station
+Measurement = Base.classes.measurement
 
 #################################################
 # Flask Setup
 #################################################
 app = Flask(__name__)
 
-
+## ABOVE THIS SECTION SHOULD BE COMPLETE ##
 #################################################
 # Flask Routes
 #################################################
