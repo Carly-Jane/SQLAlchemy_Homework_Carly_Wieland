@@ -1,127 +1,114 @@
-# Step 2 - Climate App
-
-# Now that you have completed your initial analysis, design a Flask API based on the queries that you have just developed.
-
-#     Use Flask to create your routes.
-
-# Routes
-
-#     /
-
-#         Home page.
-
-#         List all routes that are available.
-
-#     /api/v1.0/precipitation
-
-#         Convert the query results to a dictionary using date as the key and prcp as the value.
-
-#         Return the JSON representation of your dictionary.
-
-#     /api/v1.0/stations
-#         Return a JSON list of stations from the dataset.
-
-#     /api/v1.0/tobs
-
-#         Query the dates and temperature observations of the most active station for the last year of data.
-
-#         Return a JSON list of temperature observations (TOBS) for the previous year.
-
-#     /api/v1.0/<start> and /api/v1.0/<start>/<end>
-
-#         Return a JSON list of the minimum temperature, the average temperature, and the max temperature for a given start or start-end range.
-
-#         When given the start only, calculate TMIN, TAVG, and TMAX for all dates greater than and equal to the start date.
-
-#         When given the start and the end date, calculate the TMIN, TAVG, and TMAX for dates between the start and end date inclusive.
-
-# ________________________________________________________________________________________
-# DRAFT FLASK API FROM CLASS ACTIVITY #
-# ________________________________________________________________________________________
-import numpy as np
+import datetime as dt
 
 import sqlalchemy
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import Session
-from sqlalchemy import create_engine, func
-import datetime as dt
+from sqlalchemy import create_engine, func, desc
 
-from flask import Flask, jsonify
-
-
-#################################################
-# Database Setup
-#################################################
-engine = create_engine("sqlite:///Resources/hawaii.sqlite")
+engine = create_engine("sqlite:///Resources/hawaii.sqlite", connect_args={'check_same_thread': False})
 
 # reflect an existing database into a new model
 Base = automap_base()
+
 # reflect the tables
 Base.prepare(engine, reflect=True)
 
-# Save reference to the table
-Station = Base.classes.station
-Measurement = Base.classes.measurement
+# Save references to each table
+measurement = Base.classes.measurement
+station = Base.classes.station
 
-#################################################
-# Flask Setup
-#################################################
+# Create our session (link) from Python to the DB
+session = Session(engine)
+
+from flask import Flask, jsonify
+
 app = Flask(__name__)
+app.config["JSON_SORT_KEYS"] = False
 
-## ABOVE THIS SECTION SHOULD BE COMPLETE ##
-#################################################
-# Flask Routes
-#################################################
+query_date = dt.date(2017, 8, 23) - dt.timedelta(days=365)
 
 @app.route("/")
-def welcome():
-    """List all available api routes."""
+def homepage(): #List all routes that are available
     return (
-        f"Available Routes:<br/>"
-        f"/api/v1.0/names<br/>"
-        f"/api/v1.0/passengers"
+        f"<h1>Welcome to Morgan's Climate App API!</h1><br/>"
+        f"<h2>Available Routes:</h2><br/><br/>"
+        f"Return the precipitation data for the last 12 months:<br/>"
+        f"/api/v1.0/precipitation<br/><br/>"
+        f"Return a lis tof all staitons in the dataset:<br/>"
+        f"/api/v1.0/stations<br/><br/>"
+        f"Return the dates and temperature observations of the most active station for the last year of data:<br/>"
+        f"/api/v1.0/tobs<br/><br/>"
+        f"Return a JSON list of the minimum temperature, the average temperature, and the max temperature for a given start date<br/>"
+        f"Calculates TMIN, TAVG, and TMAX for all dates greater than and equal to the start date.<br/>"
+        f"Enter date in the format YYYY-MM-DD<br/>"
+        f"/api/v1.0/<start><br/><br/>"
+        f"Return a JSON list of the minimum temperature, the average temperature, and the max temperature for a given start-end range<br/>"
+        f"Calculates the TMIN, TAVG, and TMAX for dates between the start and end date inclusive<br/>"
+        f"Enter date in the format YYYY-MM-DD/YYYY-MM-DD<br/>"
+        f"/api/v1.0/<start>/<end>"
     )
 
+@app.route("/api/v1.0/precipitation")
+def precipitation(): # JSON representation of precipitation dictionary.
+    #Convert the query results to a dictionary using date as the key and prcp as the value.
+    
+    precip = session.query(measurement.date, measurement.prcp).\
+        filter(measurement.date > query_date).\
+        order_by(measurement.date).all()
+    
+    prcp_rows = [{"Date": result[0], "Precip": result[1]} for result in precip]
+    
+    return jsonify(prcp_rows)
 
-@app.route("/api/v1.0/names")
-def names():
-    # Create our session (link) from Python to the DB
-    session = Session(engine)
+@app.route("/api/v1.0/stations")
+def stations(): # JSON representation of all_stations dictionary.
+# Return a JSON list of stations from the dataset.
+    all_stations = engine.execute('SELECT * FROM station').fetchall()
 
-    """Return a list of all passenger names"""
-    # Query all passengers
-    results = session.query(Passenger.name).all()
+    station_dict = [{"ID": result[0],
+                 "Station": result [1],
+                 "Name": result[2],
+                 "Latitude": result[3],
+                 "Longitude": result[4],
+                 "Elevation": result[5]} for result in all_stations]
+    
+    return jsonify(station_dict)
 
-    session.close()
+@app.route("/api/v1.0/tobs")
+def tobs(): # JSON representation of dates and temperature observations of the most active station for the last year of data.
+#Query the dates and temperature observations of the most active station for the last year of data.
+    tobs_activity = session.query(measurement.station,
+        func.count(measurement.tobs)
+        ).group_by(measurement.station
+        ).order_by(func.count(measurement.station).desc())
+        
+    most_active_tobs = tobs_activity[0]
+    tobs_station_name = most_active_tobs[0]
 
-    # Convert list of tuples into normal list
-    all_names = list(np.ravel(results))
+    tobs2 = session.query(measurement.date, measurement.tobs).\
+        filter(measurement.date > query_date).\
+        filter(measurement.station == tobs_station_name).\
+        order_by(measurement.date).all()
+        
+    tobs_station_dict = [{"Station": most_active_tobs[0],
+                        "Date": result[0], "TOBS": result[1]} for result in tobs2]
+    
+    return jsonify(tobs_station_dict)
 
-    return jsonify(all_names)
+@app.route("/api/v1.0/<date>")
+def start_date_tobs(date):
 
+    day_tobs_results = session.query(func.min(measurement.tobs), func.avg(measurement.tobs), func.max(measurement.tobs)).\
+        filter(measurement.date >= date).all()
+    return jsonify(day_tobs_results)
 
-@app.route("/api/v1.0/passengers")
-def passengers():
-    # Create our session (link) from Python to the DB
-    session = Session(engine)
+@app.route("/api/v1.0/<start>/<end>")
+def startDateEndDate(start,end):
+    
+    start_end_tobs_results = session.query(func.min(measurement.tobs), func.avg(measurement.tobs), func.max(measurement.tobs)).\
+        filter(measurement.date >= start).\
+        filter(measurement.date <= end).all()
+    return jsonify(start_end_tobs_results)
 
-    """Return a list of passenger data including the name, age, and sex of each passenger"""
-    # Query all passengers
-    results = session.query(Passenger.name, Passenger.age, Passenger.sex).all()
-
-    session.close()
-
-    # Create a dictionary from the row data and append to a list of all_passengers
-    all_passengers = []
-    for name, age, sex in results:
-        passenger_dict = {}
-        passenger_dict["name"] = name
-        passenger_dict["age"] = age
-        passenger_dict["sex"] = sex
-        all_passengers.append(passenger_dict)
-
-    return jsonify(all_passengers)
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)
